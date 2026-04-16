@@ -20,7 +20,10 @@ A highly secure, beautiful entry point to lock down business operations.
 A centralized control room offering immediate insight into warehouse state and one-click navigation to key operations. 
 <img width="1920" height="1080" alt="Dashboard" src="https://github.com/user-attachments/assets/f2a286d6-ae65-4efe-be7d-b778a3f53001" />
 
-*(Add more screenshots here as your app grows!)*
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/7fe21253-c804-4e50-8e53-a4e27055cf8b" />
+
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/1117bb76-6336-493d-be7e-e0622ba22e1f" />
+
 
 ## 🛠️ Technology Stack
 - **Frontend Core**: React 19, Vite, Tailwind CSS
