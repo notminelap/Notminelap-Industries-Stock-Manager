@@ -2,6 +2,7 @@
   "name": "perfect-ergonomics",
   "private": true,
   "version": "0.0.0",
+  "license": "UNLICENSED",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"node server.js\" \"vite --host\"",
