@@ -6,9 +6,35 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import SplashScreen from './components/SplashScreen';
 import CustomCursor from './components/CustomCursor';
+import { api, getStoredUser, setToken, setStoredUser } from './utils/api';
 import './index.css';
 
-function AppRoutes({ isAuthenticated, handleLogin, handleLogout, theme, setTheme }) {
+/* ── Error Boundary ── */
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error, info) {
+    console.error('App Error:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)', color: 'var(--text)', gap: '16px' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: 700 }}>Something went wrong</h1>
+          <button onClick={() => window.location.reload()} style={{ padding: '12px 24px', borderRadius: '999px', background: 'var(--blue)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '16px' }}>Reload App</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function AppRoutes({ isAuthenticated, handleLogin, handleLogout, theme, setTheme, currentUser }) {
   const location = useLocation();
   return (
     <AnimatePresence mode="wait">
@@ -20,7 +46,7 @@ function AppRoutes({ isAuthenticated, handleLogin, handleLogout, theme, setTheme
         <Route
           path="/"
           element={isAuthenticated
-            ? <Dashboard onLogout={handleLogout} theme={theme} setTheme={setTheme} />
+            ? <Dashboard onLogout={handleLogout} user={currentUser} theme={theme} setTheme={setTheme} />
             : <Navigate to="/login" />}
         />
         <Route path="*" element={<Navigate to="/" />} />
@@ -30,7 +56,9 @@ function AppRoutes({ isAuthenticated, handleLogin, handleLogout, theme, setTheme
 }
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem('auth') === 'true');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(() => !sessionStorage.getItem('splashed'));
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
 
@@ -40,14 +68,39 @@ function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  const handleLogin = () => {
-    localStorage.setItem('auth', 'true');
+  // Validate stored token on mount
+  useEffect(() => {
+    const validateAuth = async () => {
+      const stored = getStoredUser();
+      if (!stored) {
+        setAuthLoading(false);
+        return;
+      }
+      try {
+        const user = await api('/auth/me');
+        setCurrentUser(user);
+        setIsAuthenticated(true);
+      } catch {
+        // Token invalid/expired
+        setToken(null);
+        setStoredUser(null);
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+    validateAuth();
+  }, []);
+
+  const handleLogin = (user) => {
+    setCurrentUser(user);
     setIsAuthenticated(true);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('auth');
+    setToken(null);
+    setStoredUser(null);
     setIsAuthenticated(false);
+    setCurrentUser(null);
   };
 
   const handleSplashComplete = () => {
@@ -56,22 +109,29 @@ function App() {
   };
 
   return (
-    <BrowserRouter>
-      <CustomCursor />
-      <Toaster position="top-right" toastOptions={{ className: 'glass-toast' }} />
-      <AnimatePresence>
-        {showSplash && <SplashScreen key="splash" onComplete={handleSplashComplete} />}
-      </AnimatePresence>
-      {!showSplash && (
-        <AppRoutes
-          isAuthenticated={isAuthenticated}
-          handleLogin={handleLogin}
-          handleLogout={handleLogout}
-          theme={theme}
-          setTheme={setTheme}
-        />
-      )}
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <CustomCursor />
+        <Toaster position="top-right" toastOptions={{ className: 'glass-toast' }} />
+        <AnimatePresence>
+          {showSplash && <SplashScreen key="splash" onComplete={handleSplashComplete} />}
+        </AnimatePresence>
+        {!showSplash && (
+          authLoading ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)', color: 'var(--text)' }}><p>Loading...</p></div>
+          ) : (
+            <AppRoutes
+              isAuthenticated={isAuthenticated}
+              handleLogin={handleLogin}
+              handleLogout={handleLogout}
+              theme={theme}
+              setTheme={setTheme}
+              currentUser={currentUser}
+            />
+          )
+        )}
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 

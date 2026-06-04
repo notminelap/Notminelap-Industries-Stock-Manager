@@ -15,6 +15,11 @@ dist-ssr
 # Environment variables — NEVER commit these
 .env
 
+# Generated / temporary files
+database.json
+err.txt
+lint.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

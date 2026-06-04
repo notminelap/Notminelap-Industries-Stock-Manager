@@ -4,6 +4,8 @@ import mongoose from 'mongoose';
 import dns from 'dns';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { authRouter, authMiddleware, requireRole } from './auth.js';
+import { validate, itemSchema as itemValidator, transactionSchema as txValidator } from './validators.js';
 
 // Force Google DNS — fixes ISP/container SRV-record resolution issues
 dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
@@ -14,8 +16,22 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+// ── CORS ───────────────────────────────────────────────────────────────
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:3002',
+  process.env.RENDER_EXTERNAL_URL,
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) cb(null, true);
+    else cb(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
+
+app.use(express.json({ limit: '10mb' }));
 
 // ── MongoDB Connection ─────────────────────────────────────────────────
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/perfect-ergonomics';
@@ -25,21 +41,25 @@ mongoose.connect(MONGODB_URI)
   .catch(err => { console.error('❌ MongoDB connection error:', err); process.exit(1); });
 
 // ── Schemas ────────────────────────────────────────────────────────────
-const transactionSchema = new mongoose.Schema({
-  id:            String,
-  itemId:        String,
-  type:          String,
-  quantity:      Number,
-  partyName:     String,
-  date:          String,
-  address:       String,
-  billingNumber: String,
-  timestamp:     String,
-});
-
 const itemSchema = new mongoose.Schema({
-  id: { type: String, required: true, unique: true },
-}, { strict: false, _id: false });
+  id:                { type: String, required: true, unique: true },
+  model:             { type: String, required: true, trim: true },
+  color:             { type: String, required: true, trim: true },
+  description:       { type: String, default: '', trim: true },
+  quantity:          { type: Number, required: true, min: 0, default: 0 },
+  image:             { type: String, default: '' },
+  lowStockThreshold: { type: Number, default: 5, min: 0 },
+}, { timestamps: true });
+
+const transactionSchema = new mongoose.Schema({
+  itemId:        { type: String, required: true },
+  type:          { type: String, enum: ['IN', 'OUT'], required: true },
+  quantity:      { type: Number, required: true, min: 1 },
+  partyName:     { type: String, required: true, trim: true },
+  date:          { type: String, required: true },
+  address:       { type: String, required: true, trim: true },
+  billingNumber: { type: String, required: true, trim: true },
+}, { timestamps: true });
 
 const Transaction = mongoose.model('Transaction', transactionSchema);
 const Item        = mongoose.model('Item', itemSchema);
@@ -52,15 +72,28 @@ const lean = doc => {
   return obj;
 };
 
+// ── Auth Routes ────────────────────────────────────────────────────────
+app.use('/api/auth', authRouter);
+
 // ── REST Endpoints ─────────────────────────────────────────────────────
-app.get('/api/inventory', async (req, res) => {
+app.get('/api/inventory', authMiddleware, async (req, res) => {
   try {
     const items = await Item.find({}).lean();
     res.json(items);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/inventory', async (req, res) => {
+// Low-stock alerts — MUST be before /:id routes
+app.get('/api/inventory/alerts', authMiddleware, async (req, res) => {
+  try {
+    const items = await Item.find({
+      $expr: { $lte: ['$quantity', '$lowStockThreshold'] }
+    }).lean();
+    res.json(items);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/inventory', authMiddleware, validate(itemValidator), async (req, res) => {
   try {
     const item = await Item.findOneAndUpdate(
       { id: req.body.id },
@@ -71,7 +104,7 @@ app.post('/api/inventory', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/inventory/:id', async (req, res) => {
+app.put('/api/inventory/:id', authMiddleware, validate(itemValidator.partial()), async (req, res) => {
   try {
     const item = await Item.findOneAndUpdate(
       { id: req.params.id },
@@ -83,7 +116,7 @@ app.put('/api/inventory/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/inventory/:id', async (req, res) => {
+app.delete('/api/inventory/:id', authMiddleware, async (req, res) => {
   try {
     await Item.deleteOne({ id: req.params.id });
     await Transaction.deleteMany({ itemId: req.params.id });
@@ -92,16 +125,16 @@ app.delete('/api/inventory/:id', async (req, res) => {
 });
 
 // ── Transaction Endpoints ──────────────────────────────────────────────
-app.get('/api/inventory/:id/transactions', async (req, res) => {
+app.get('/api/inventory/:id/transactions', authMiddleware, async (req, res) => {
   try {
     const txs = await Transaction.find({ itemId: req.params.id })
-      .sort({ timestamp: -1 })
+      .sort({ createdAt: -1 })
       .lean();
     res.json(txs);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/inventory/:id/transaction', async (req, res) => {
+app.post('/api/inventory/:id/transaction', authMiddleware, validate(txValidator), async (req, res) => {
   try {
     const { type, quantity, partyName, date, address, billingNumber } = req.body;
     const numQty = Number(quantity);
@@ -115,7 +148,7 @@ app.post('/api/inventory/:id/transaction', async (req, res) => {
       }
     }
 
-    // Use $inc to atomically update quantity — avoids _id:false save() issue
+    // Use $inc to atomically update quantity
     const delta = type === 'IN' ? numQty : -numQty;
     const updatedItem = await Item.findOneAndUpdate(
       { id: req.params.id },
@@ -125,7 +158,6 @@ app.post('/api/inventory/:id/transaction', async (req, res) => {
     if (!updatedItem) return res.status(404).json({ error: 'Item not found' });
 
     const tx = new Transaction({
-      id:            Date.now().toString() + Math.floor(Math.random() * 1000),
       itemId:        req.params.id,
       type,
       quantity:      numQty,
@@ -133,7 +165,6 @@ app.post('/api/inventory/:id/transaction', async (req, res) => {
       date,
       address,
       billingNumber,
-      timestamp:     new Date().toISOString(),
     });
     await tx.save();
 
@@ -142,17 +173,31 @@ app.post('/api/inventory/:id/transaction', async (req, res) => {
 });
 
 /* ── All transactions (activity feed) ── */
-app.get('/api/transactions', async (req, res) => {
+app.get('/api/transactions', authMiddleware, async (req, res) => {
   try {
-    const txs = await Transaction.find({}).sort({ timestamp: -1 }).limit(30).lean();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+    const skip = (page - 1) * limit;
+
+    const filter = {};
+    if (req.query.type) filter.type = req.query.type;
+    if (req.query.search) {
+      filter.partyName = { $regex: req.query.search, $options: 'i' };
+    }
+
+    const [txs, total] = await Promise.all([
+      Transaction.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      Transaction.countDocuments(filter),
+    ]);
     const itemIds = [...new Set(txs.map(t => t.itemId))];
-    const items   = await Item.find({ id: { $in: itemIds } }).lean();
-    const map     = Object.fromEntries(items.map(i => [i.id, i]));
-    res.json(txs.map(tx => ({
-      ...tx,
-      itemModel: map[tx.itemId]?.model,
-      itemColor: map[tx.itemId]?.color,
-    })));
+    const items = await Item.find({ id: { $in: itemIds } }).lean();
+    const map = Object.fromEntries(items.map(i => [i.id, i]));
+    res.json({
+      transactions: txs.map(tx => ({ ...tx, itemModel: map[tx.itemId]?.model, itemColor: map[tx.itemId]?.color })),
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -161,8 +206,16 @@ const distPath = join(__dirname, 'dist');
 app.use(express.static(distPath));
 app.get('/{*path}', (req, res) => res.sendFile(join(distPath, 'index.html')));
 
+// ── Global Error Handler ───────────────────────────────────────────────
+app.use((err, req, res, _next) => {
+  console.error('Unhandled error:', err);
+  const isDev = process.env.NODE_ENV !== 'production';
+  res.status(err.status || 500).json({
+    error: isDev ? err.message : 'Internal server error',
+  });
+});
+
 // ── Start ──────────────────────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Warehouse server running on port ${PORT}`);
 });
-

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import toast from 'react-hot-toast';
+import { api, apiGet, apiPost, apiPut, apiDelete } from '../utils/api';
 import CommandPalette from '../components/CommandPalette';
 import {
   LogOut, Plus, Image as ImageIcon, Search,
@@ -14,7 +15,7 @@ import {
 /* ─────────── helpers ─────────── */
 const fmt  = n  => Number(n).toLocaleString('en-IN');
 const fmtD = ds => new Date(ds).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-const API  = '/api';
+
 const sp   = { type: 'spring', bounce: 0.3, duration: 0.5 };
 
 /* ──── Fire confetti celebration ──── */
@@ -333,7 +334,7 @@ function AnalyticsView({ inventory }) {
 /* ══════════════════════════════════════════
    MAIN DASHBOARD
 ══════════════════════════════════════════ */
-export default function Dashboard({ onLogout, theme, setTheme }) {
+export default function Dashboard({ onLogout, user, theme, setTheme }) {
   const [inventory, setInventory]   = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSection, setActiveSection] = useState('warehouse'); // 'warehouse' | 'analytics'
@@ -364,9 +365,8 @@ export default function Dashboard({ onLogout, theme, setTheme }) {
   const fetchInventory = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API}/inventory`);
-      if (!res.ok) throw new Error(`${res.status}`);
-      setInventory(await res.json());
+      const data = await apiGet('/inventory');
+      setInventory(data);
     } catch {
       toast.error('Cannot reach server. Is it running?');
     } finally {
@@ -376,7 +376,7 @@ export default function Dashboard({ onLogout, theme, setTheme }) {
   useEffect(() => { fetchInventory(); }, [fetchInventory]);
 
   const fetchActivity = useCallback(async () => {
-    try { const r = await fetch(`${API}/transactions`); if (r.ok) setActivityFeed(await r.json()); } catch {}
+    try { const result = await apiGet('/transactions'); setActivityFeed(result.transactions || result); } catch {}
   }, []);
   useEffect(() => { fetchActivity(); }, [fetchActivity]);
 
@@ -397,10 +397,9 @@ export default function Dashboard({ onLogout, theme, setTheme }) {
     const id = deleteTarget.id;
     setDeleteTarget(null);
     try {
-      const res = await fetch(`${API}/inventory/${id}`, { method: 'DELETE' });
-      if (res.ok) { fetchInventory(); toast.success('Item deleted'); }
-      else toast.error('Delete failed');
-    } catch { toast.error('Network error'); }
+      await apiDelete(`/inventory/${id}`);
+      fetchInventory(); toast.success('Item deleted');
+    } catch { toast.error('Delete failed'); }
   };
 
   /* ── image ── */
@@ -427,16 +426,15 @@ export default function Dashboard({ onLogout, theme, setTheme }) {
     e.preventDefault();
     const payload = { ...itemForm, id: editingId || Date.now().toString(), quantity: Number(itemForm.quantity) };
     try {
-      const url    = editingId ? `${API}/inventory/${editingId}` : `${API}/inventory`;
-      const method = editingId ? 'PUT' : 'POST';
-      const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (res.ok) {
-        fetchInventory(); setIsItemModalOpen(false);
-        if (!editingId) { fireConfetti(); toast.success('🎉 Item added!'); }
-        else toast.success('Item updated');
+      if (editingId) {
+        await apiPut(`/inventory/${editingId}`, payload);
+      } else {
+        await apiPost('/inventory', payload);
       }
-      else toast.error('Failed to save item');
-    } catch { toast.error('Network error'); }
+      fetchInventory(); setIsItemModalOpen(false);
+      if (!editingId) { fireConfetti(); toast.success('🎉 Item added!'); }
+      else toast.success('Item updated');
+    } catch { toast.error('Failed to save item'); }
   };
 
   /* ── transaction ── */
@@ -452,24 +450,17 @@ export default function Dashboard({ onLogout, theme, setTheme }) {
       return;
     }
     try {
-      const res = await fetch(`${API}/inventory/${activeItem.id}/transaction`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(txForm)
-      });
-      if (res.ok) {
-        fetchInventory(); setIsTransactionModalOpen(false);
-        toast.success(txForm.type === 'IN' ? '✓ Restock logged' : '✓ Dispatch logged');
-      } else {
-        const err = await res.json(); toast.error(err.error || 'Transaction failed');
-      }
-    } catch { toast.error('Network error'); }
+      await apiPost(`/inventory/${activeItem.id}/transaction`, txForm);
+      fetchInventory(); setIsTransactionModalOpen(false);
+      toast.success(txForm.type === 'IN' ? '✓ Restock logged' : '✓ Dispatch logged');
+    } catch (err) { toast.error(err.message || 'Transaction failed'); }
   };
 
   /* ── history ── */
   const openHistoryModal = async (item) => {
     setActiveItem(item);
     try {
-      const res  = await fetch(`${API}/inventory/${item.id}/transactions`);
-      const data = await res.json();
+      const data = await apiGet(`/inventory/${item.id}/transactions`);
       setHistoryData(data);
       setIsHistoryModalOpen(true);
     } catch { toast.error('Could not load ledger'); }
@@ -508,13 +499,9 @@ export default function Dashboard({ onLogout, theme, setTheme }) {
     const qty  = Math.abs(diff);
     if (type === 'OUT' && qty > item.quantity) { toast.error('Not enough stock'); setInlineEdit(null); return; }
     try {
-      const res = await fetch(`${API}/inventory/${item.id}/transaction`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, quantity: qty, partyName: 'Quick Edit', date: new Date().toISOString().split('T')[0], address: '-', billingNumber: 'QE-' + Date.now() })
-      });
-      if (res.ok) { fetchInventory(); toast.success(type === 'IN' ? `+${qty} added` : `−${qty} removed`); }
-      else toast.error('Update failed');
-    } catch { toast.error('Network error'); }
+      await apiPost(`/inventory/${item.id}/transaction`, { type, quantity: qty, partyName: 'Quick Edit', date: new Date().toISOString().split('T')[0], address: '-', billingNumber: 'QE-' + Date.now() });
+      fetchInventory(); toast.success(type === 'IN' ? `+${qty} added` : `−${qty} removed`);
+    } catch { toast.error('Update failed'); }
     setInlineEdit(null);
   };
 

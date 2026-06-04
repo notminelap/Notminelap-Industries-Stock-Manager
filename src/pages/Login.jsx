@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Package, Eye, EyeOff } from 'lucide-react';
+import { apiPost, setToken, setStoredUser } from '../utils/api';
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -11,13 +12,16 @@ export default function Login({ onLogin }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
-    await new Promise(r => setTimeout(r, 600));
-    if (username === 'owner' && password === 'admin123') {
-      onLogin();
-    } else {
-      setError('Invalid credentials. Try owner / admin123');
+    setLoading(true);
+    try {
+      const data = await apiPost('/auth/login', { username, password });
+      setToken(data.token);
+      setStoredUser(data.user);
+      onLogin(data.user);
+    } catch (err) {
+      setError(err.message || 'Login failed. Please check your credentials.');
+    } finally {
       setLoading(false);
     }
   };
