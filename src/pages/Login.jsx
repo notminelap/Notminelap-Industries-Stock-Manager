@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Package, Eye, EyeOff } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { apiPost, setToken, setStoredUser } from '../utils/api';
 
 export default function Login({ onLogin }) {
+  const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -65,7 +67,7 @@ export default function Login({ onLogin }) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.35 }}
           >
-            Perfect Ergonomics
+            Notminelap Industries
           </motion.h1>
           <motion.p
             style={{ color: 'var(--text-2)', fontSize: '0.9rem', fontWeight: 500 }}
@@ -139,6 +141,11 @@ export default function Login({ onLogin }) {
             {loading ? 'Signing in…' : 'Sign In'}
           </button>
         </form>
+
+        <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+          <span style={{ color: 'var(--text-3)', fontSize: '0.85rem' }}>Don't have an account? </span>
+          <span onClick={() => navigate('/register')} style={{ color: 'var(--blue)', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>Create one</span>
+        </div>
       </motion.div>
     </motion.div>
   );

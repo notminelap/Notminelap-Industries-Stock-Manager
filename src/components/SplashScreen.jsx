@@ -55,7 +55,7 @@ export default function SplashScreen({ onComplete }) {
             letterSpacing: '-0.04em', textAlign: 'center', color: '#f5f5f7', margin: 0,
           }}
         >
-          Perfect Ergonomics
+          Notminelap Industries
         </motion.h1>
       </div>
 
@@ -66,7 +66,7 @@ export default function SplashScreen({ onComplete }) {
         transition={{ delay: 0.82, duration: 0.5 }}
         style={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#f5f5f7', margin: 0, position: 'relative', zIndex: 1 }}
       >
-        Warehouse Management System
+        Inventory Intelligence
       </motion.p>
 
       {/* Bottom progress bar */}

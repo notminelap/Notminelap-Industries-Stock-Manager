@@ -4,6 +4,9 @@ import { Toaster } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Landing from './pages/Landing';
+import Pricing from './pages/Pricing';
+import Register from './pages/Register';
 import SplashScreen from './components/SplashScreen';
 import CustomCursor from './components/CustomCursor';
 import { api, getStoredUser, setToken, setStoredUser } from './utils/api';
@@ -39,16 +42,13 @@ function AppRoutes({ isAuthenticated, handleLogin, handleLogout, theme, setTheme
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
-        <Route
-          path="/login"
-          element={!isAuthenticated ? <Login onLogin={handleLogin} /> : <Navigate to="/" />}
-        />
-        <Route
-          path="/"
-          element={isAuthenticated
-            ? <Dashboard onLogout={handleLogout} user={currentUser} theme={theme} setTheme={setTheme} />
-            : <Navigate to="/login" />}
-        />
+        <Route path="/" element={isAuthenticated
+          ? <Dashboard onLogout={handleLogout} user={currentUser} theme={theme} setTheme={setTheme} />
+          : <Landing />
+        } />
+        <Route path="/login" element={!isAuthenticated ? <Login onLogin={handleLogin} /> : <Navigate to="/" />} />
+        <Route path="/register" element={!isAuthenticated ? <Register onLogin={handleLogin} /> : <Navigate to="/" />} />
+        <Route path="/pricing" element={<Pricing />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </AnimatePresence>

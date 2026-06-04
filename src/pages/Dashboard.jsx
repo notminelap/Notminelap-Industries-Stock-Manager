@@ -539,7 +539,7 @@ export default function Dashboard({ onLogout, user, theme, setTheme }) {
         {/* logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Box size={16} color="var(--blue)" strokeWidth={2.2} />
-          <span style={{ fontWeight: 800, fontSize: '0.82rem', letterSpacing: '-0.03em' }}>Perfect Ergonomics</span>
+          <span style={{ fontWeight: 800, fontSize: '0.82rem', letterSpacing: '-0.03em' }}>Notminelap Industries</span>
         </div>
 
         {/* nav links */}
@@ -621,7 +621,7 @@ export default function Dashboard({ onLogout, user, theme, setTheme }) {
 
         <div style={{ position: 'relative', zIndex: 1, maxWidth: 900, margin: '0 auto', padding: '5rem 1.5rem 4rem', textAlign: 'center' }}>
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-            <Tag color="blue"><Activity size={10} /> Inventory Pro</Tag>
+            <Tag color="blue"><Activity size={10} /> Notminelap Industries Platform</Tag>
           </motion.div>
 
           <motion.h1
@@ -629,9 +629,9 @@ export default function Dashboard({ onLogout, user, theme, setTheme }) {
             transition={{ delay: 0.15, ...sp }}
             style={{ fontSize: 'clamp(3rem, 9vw, 7.5rem)', fontWeight: 900, letterSpacing: '-0.05em', lineHeight: 0.95, margin: '1.25rem 0 1rem' }}
           >
-            Built for the<br />
-            <span style={{ background: 'linear-gradient(120deg, #3b9eff 0%, #00d4ff 45%, #30d158 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-              warehouse floor.
+            Warehouse<br />
+            <span style={{ background: 'linear-gradient(120deg, #3b9eff 0%, #a855f7 45%, #30d158 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              intelligence.
             </span>
           </motion.h1>
 
@@ -639,7 +639,7 @@ export default function Dashboard({ onLogout, user, theme, setTheme }) {
             initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}
             style={{ fontSize: 'clamp(1rem, 2.5vw, 1.4rem)', color: 'var(--text-2)', fontWeight: 500, letterSpacing: '-0.02em', marginBottom: '2rem', lineHeight: 1.5 }}
           >
-            Real-time stock. Beautiful ledger. Zero friction.
+            The SaaS platform that runs your entire inventory operation.
           </motion.p>
 
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38 }} style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>

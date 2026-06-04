@@ -4,8 +4,9 @@ import mongoose from 'mongoose';
 import dns from 'dns';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { authRouter, authMiddleware, requireRole } from './auth.js';
+import { authRouter, authMiddleware, requireRole, User } from './auth.js';
 import { validate, itemSchema as itemValidator, transactionSchema as txValidator } from './validators.js';
+import { paymentRouter, attachSubscription } from './payments.js';
 
 // Force Google DNS — fixes ISP/container SRV-record resolution issues
 dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
@@ -74,9 +75,10 @@ const lean = doc => {
 
 // ── Auth Routes ────────────────────────────────────────────────────────
 app.use('/api/auth', authRouter);
+app.use('/api/payments', paymentRouter);
 
 // ── REST Endpoints ─────────────────────────────────────────────────────
-app.get('/api/inventory', authMiddleware, async (req, res) => {
+app.get('/api/inventory', authMiddleware, attachSubscription, async (req, res) => {
   try {
     const items = await Item.find({}).lean();
     res.json(items);
@@ -84,7 +86,7 @@ app.get('/api/inventory', authMiddleware, async (req, res) => {
 });
 
 // Low-stock alerts — MUST be before /:id routes
-app.get('/api/inventory/alerts', authMiddleware, async (req, res) => {
+app.get('/api/inventory/alerts', authMiddleware, attachSubscription, async (req, res) => {
   try {
     const items = await Item.find({
       $expr: { $lte: ['$quantity', '$lowStockThreshold'] }
@@ -93,7 +95,7 @@ app.get('/api/inventory/alerts', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/inventory', authMiddleware, validate(itemValidator), async (req, res) => {
+app.post('/api/inventory', authMiddleware, attachSubscription, validate(itemValidator), async (req, res) => {
   try {
     const item = await Item.findOneAndUpdate(
       { id: req.body.id },
@@ -104,7 +106,7 @@ app.post('/api/inventory', authMiddleware, validate(itemValidator), async (req, 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/inventory/:id', authMiddleware, validate(itemValidator.partial()), async (req, res) => {
+app.put('/api/inventory/:id', authMiddleware, attachSubscription, validate(itemValidator.partial()), async (req, res) => {
   try {
     const item = await Item.findOneAndUpdate(
       { id: req.params.id },
@@ -116,7 +118,7 @@ app.put('/api/inventory/:id', authMiddleware, validate(itemValidator.partial()),
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/inventory/:id', authMiddleware, async (req, res) => {
+app.delete('/api/inventory/:id', authMiddleware, attachSubscription, async (req, res) => {
   try {
     await Item.deleteOne({ id: req.params.id });
     await Transaction.deleteMany({ itemId: req.params.id });
@@ -125,7 +127,7 @@ app.delete('/api/inventory/:id', authMiddleware, async (req, res) => {
 });
 
 // ── Transaction Endpoints ──────────────────────────────────────────────
-app.get('/api/inventory/:id/transactions', authMiddleware, async (req, res) => {
+app.get('/api/inventory/:id/transactions', authMiddleware, attachSubscription, async (req, res) => {
   try {
     const txs = await Transaction.find({ itemId: req.params.id })
       .sort({ createdAt: -1 })
@@ -134,7 +136,7 @@ app.get('/api/inventory/:id/transactions', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/inventory/:id/transaction', authMiddleware, validate(txValidator), async (req, res) => {
+app.post('/api/inventory/:id/transaction', authMiddleware, attachSubscription, validate(txValidator), async (req, res) => {
   try {
     const { type, quantity, partyName, date, address, billingNumber } = req.body;
     const numQty = Number(quantity);
@@ -173,7 +175,7 @@ app.post('/api/inventory/:id/transaction', authMiddleware, validate(txValidator)
 });
 
 /* ── All transactions (activity feed) ── */
-app.get('/api/transactions', authMiddleware, async (req, res) => {
+app.get('/api/transactions', authMiddleware, attachSubscription, async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
@@ -201,6 +203,36 @@ app.get('/api/transactions', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── User Management (Admin only) ──────────────────────────────────────
+app.get('/api/users', authMiddleware, requireRole('admin'), async (req, res) => {
+  try {
+    const users = await User.find({}).select('-passwordHash').lean();
+    res.json(users);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/users/:userId', authMiddleware, requireRole('admin'), async (req, res) => {
+  try {
+    const { role } = req.body;
+    if (role && !['admin', 'manager', 'staff'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+    const user = await User.findByIdAndUpdate(req.params.userId, { role }, { new: true }).select('-passwordHash');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/users/:userId', authMiddleware, requireRole('admin'), async (req, res) => {
+  try {
+    if (req.params.userId === req.user.id) {
+      return res.status(400).json({ error: 'Cannot delete yourself' });
+    }
+    await User.findByIdAndDelete(req.params.userId);
+    res.status(204).send();
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Serve built frontend (production) ─────────────────────────────────
 const distPath = join(__dirname, 'dist');
 app.use(express.static(distPath));
@@ -217,5 +249,5 @@ app.use((err, req, res, _next) => {
 
 // ── Start ──────────────────────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Warehouse server running on port ${PORT}`);
+  console.log(`🚀 Notminelap Industries server running on port ${PORT}`);
 });
