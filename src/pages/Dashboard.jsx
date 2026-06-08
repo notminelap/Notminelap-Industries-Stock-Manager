@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import toast from 'react-hot-toast';
 import { api, apiGet, apiPost, apiPut, apiDelete } from '../utils/api';
@@ -9,7 +10,7 @@ import {
   Edit2, Trash2, History, ArrowDownToLine, ArrowUpFromLine,
   X, Box, BarChart3, AlertTriangle, CheckCircle2,
   Layers, Package, Activity, Download, Clock, SlidersHorizontal,
-  ArrowDown, ArrowUp, Sun, Moon
+  ArrowDown, ArrowUp, Sun, Moon, Printer
 } from 'lucide-react';
 
 /* ─────────── helpers ─────────── */
@@ -17,6 +18,63 @@ const fmt  = n  => Number(n).toLocaleString('en-IN');
 const fmtD = ds => new Date(ds).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
 const sp   = { type: 'spring', bounce: 0.3, duration: 0.5 };
+
+/* ──── Code 39 SVG Barcode Generator ──── */
+function Barcode({ value }) {
+  const cleanValue = String(value).toUpperCase().replace(/[^0-9A-Z\-.$/+% ]/g, '');
+  const fullValue = `*${cleanValue}*`;
+  
+  const code39 = {
+    '0': 'N N W W N N N W N', '1': 'W N N W N N N N W', '2': 'N N W W N N N N W', '3': 'W N W W N N N N N',
+    '4': 'N N N W N N W N W', '5': 'W N N W N N W N N', '6': 'N N W W N N W N N', '7': 'N N N W N N N W W',
+    '8': 'W N N W N N N W N', '9': 'N N W W N N N W N', 'A': 'W N N N N W N N W', 'B': 'N N W N N W N N W',
+    'C': 'W N W N N W N N N', 'D': 'N N N N N W W N W', 'E': 'W N N N N W W N N', 'F': 'N N W N N W W N N',
+    'G': 'N N N N N N W W W', 'H': 'W N N N N N W W N', 'I': 'N N W N N N W W N', 'J': 'N N N N N N W W N',
+    'K': 'W N N N N N N N W', 'L': 'N N W N N N N N W', 'M': 'W N W N N N N N N', 'N': 'N N N N N W N N W',
+    'O': 'W N N N N W N N N', 'P': 'N N W N N W N N N', 'Q': 'N N N N N N N W W', 'R': 'W N N N N N N W N',
+    'S': 'N N W N N N N W N', 'T': 'N N N N N W N W N', 'U': 'W W N N N N N N W', 'V': 'N W W N N N N N W',
+    'W': 'W W W N N N N N N', 'X': 'N W N N N W N N W', 'Y': 'W W N N N W N N N', 'Z': 'N W W N N W N N N',
+    '-': 'N W N N N N N W W', '.': 'W W N N N N N W N', ' ': 'N W W N N N N W N', '*': 'N W N N N W N W N'
+  };
+
+  let bits = '';
+  for (let i = 0; i < fullValue.length; i++) {
+    const char = fullValue[i];
+    const pattern = code39[char] || code39['*'];
+    const tokens = pattern.split(' ');
+    for (let j = 0; j < tokens.length; j++) {
+      const isWide = tokens[j] === 'W';
+      const isBar = j % 2 === 0;
+      if (isBar) {
+        bits += isWide ? '111' : '1';
+      } else {
+        bits += isWide ? '000' : '0';
+      }
+    }
+    bits += '0';
+  }
+
+  const barWidth = 2;
+  const height = 70;
+  const bars = [];
+  let x = 10;
+  for (let i = 0; i < bits.length; i++) {
+    const bit = bits[i];
+    if (bit === '1') {
+      bars.push(<rect key={i} x={x} y={0} width={barWidth} height={height} fill="currentColor" />);
+    }
+    x += barWidth;
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, color: '#000' }} className="barcode-print-container">
+      <svg width={x + 10} height={height} style={{ display: 'block' }}>
+        {bars}
+      </svg>
+      <span style={{ fontSize: '0.8rem', fontFamily: 'monospace', letterSpacing: 3, color: '#444' }}>{cleanValue}</span>
+    </div>
+  );
+}
 
 /* ──── Fire confetti celebration ──── */
 const fireConfetti = () => {
@@ -335,12 +393,16 @@ function AnalyticsView({ inventory }) {
    MAIN DASHBOARD
 ══════════════════════════════════════════ */
 export default function Dashboard({ onLogout, user, theme, setTheme }) {
+  const navigate = useNavigate();
+  const [subscription, setSubscription] = useState({ plan: 'free', status: 'active' });
   const [inventory, setInventory]   = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSection, setActiveSection] = useState('warehouse'); // 'warehouse' | 'analytics'
   const [isItemModalOpen,        setIsItemModalOpen]        = useState(false);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [isHistoryModalOpen,     setIsHistoryModalOpen]     = useState(false);
+  const [isBarcodeModalOpen,     setIsBarcodeModalOpen]     = useState(false);
+  const [barcodeItem,            setBarcodeItem]            = useState(null);
   const [deleteTarget,           setDeleteTarget]           = useState(null); // item to delete
   const [editingId,   setEditingId]   = useState(null);
   const [activeItem,  setActiveItem]  = useState(null);
@@ -362,6 +424,15 @@ export default function Dashboard({ onLogout, user, theme, setTheme }) {
   const [activityFeed, setActivityFeed] = useState([]);
 
   /* ── fetch ── */
+  const fetchSubscription = useCallback(async () => {
+    try {
+      const sub = await apiGet('/payments/status');
+      setSubscription(sub);
+    } catch (err) {
+      console.error('Failed to fetch subscription status:', err);
+    }
+  }, []);
+
   const fetchInventory = useCallback(async () => {
     try {
       setLoading(true);
@@ -373,7 +444,11 @@ export default function Dashboard({ onLogout, user, theme, setTheme }) {
       setLoading(false);
     }
   }, []);
-  useEffect(() => { fetchInventory(); }, [fetchInventory]);
+
+  useEffect(() => {
+    fetchInventory();
+    fetchSubscription();
+  }, [fetchInventory, fetchSubscription]);
 
   const fetchActivity = useCallback(async () => {
     try { const result = await apiGet('/transactions'); setActivityFeed(result.transactions || result); } catch {}
@@ -434,7 +509,15 @@ export default function Dashboard({ onLogout, user, theme, setTheme }) {
       fetchInventory(); setIsItemModalOpen(false);
       if (!editingId) { fireConfetti(); toast.success('🎉 Item added!'); }
       else toast.success('Item updated');
-    } catch { toast.error('Failed to save item'); }
+    } catch (err) {
+      if (err.message?.includes('catalog limit')) {
+        toast.error('Limit reached! Redirecting to Pricing...', { icon: '👑' });
+        setIsItemModalOpen(false);
+        setTimeout(() => navigate('/pricing'), 1500);
+      } else {
+        toast.error('Failed to save item');
+      }
+    }
   };
 
   /* ── transaction ── */
@@ -466,8 +549,67 @@ export default function Dashboard({ onLogout, user, theme, setTheme }) {
     } catch { toast.error('Could not load ledger'); }
   };
 
+  /* ── barcode modal ── */
+  const openBarcodeModal = (item) => {
+    if (subscription?.plan !== 'pro') {
+      toast.error('Barcode generation is a Pro feature. Redirecting to Pricing...', { icon: '👑' });
+      setTimeout(() => navigate('/pricing'), 1500);
+      return;
+    }
+    setBarcodeItem(item);
+    setIsBarcodeModalOpen(true);
+  };
+
+  const handlePrintBarcode = () => {
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Print Barcode - ${barcodeItem.model}</title>
+          <style>
+            body {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              height: 100vh;
+              margin: 0;
+              font-family: system-ui, sans-serif;
+            }
+            .barcode-print-container {
+              text-align: center;
+            }
+            svg {
+              max-width: 100%;
+              height: auto;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="barcode-print-container">
+            <h3>${barcodeItem.model}</h3>
+            <p>${barcodeItem.color}</p>
+            \${document.querySelector('.barcode-svg-wrapper').innerHTML}
+          </div>
+          <script>
+            window.onload = () => {
+              window.print();
+              window.close();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   /* ── export CSV ── */
   const exportCSV = useCallback(() => {
+    if (subscription?.plan !== 'pro') {
+      toast.error('CSV export is a Pro feature. Redirecting to Pricing...', { icon: '👑' });
+      setTimeout(() => navigate('/pricing'), 1500);
+      return;
+    }
     const rows = [['ID','Model','Color','Description','Quantity','SKU'],
       ...inventory.map(i => [i.id,i.model,i.color,i.description,i.quantity,i.sku||''])];
     const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
@@ -476,7 +618,7 @@ export default function Dashboard({ onLogout, user, theme, setTheme }) {
     a.download = `inventory-${new Date().toISOString().slice(0,10)}.csv`;
     a.click();
     toast.success('CSV downloaded');
-  }, [inventory]);
+  }, [inventory, subscription, navigate]);
   useEffect(() => {
     const handler = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
@@ -678,9 +820,31 @@ export default function Dashboard({ onLogout, user, theme, setTheme }) {
         </motion.h2>
         <motion.div
           initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
-          style={{ background: 'var(--surface-2)', borderRadius: 'var(--radius-card)', border: '1px solid var(--border)', padding: '1.75rem' }}
+          style={{ background: 'var(--surface-2)', borderRadius: 'var(--radius-card)', border: '1px solid var(--border)', padding: '1.75rem', position: 'relative', overflow: 'hidden' }}
         >
-          <AnalyticsView inventory={inventory} />
+          {subscription?.plan !== 'pro' ? (
+            <>
+              {/* Blurred background preview */}
+              <div style={{ filter: 'blur(8px)', opacity: 0.15, pointerEvents: 'none' }}>
+                <AnalyticsView inventory={[{ id: '1', model: 'Model X', color: 'Black', quantity: 120 }, { id: '2', model: 'Model Y', color: 'White', quantity: 45 }]} />
+              </div>
+              {/* Overlay content */}
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', background: 'rgba(8,8,10,0.4)', backdropFilter: 'blur(2px)' }}>
+                <div style={{ background: 'rgba(168,85,247,0.15)', padding: 16, borderRadius: '50%', marginBottom: '1.25rem', border: '1px solid rgba(168,85,247,0.3)', color: '#bf5af2' }}>
+                  <BarChart3 size={32} />
+                </div>
+                <h3 style={{ fontSize: '1.5rem', fontWeight: 900, letterSpacing: '-0.03em', marginBottom: 8, textAlign: 'center' }}>Unlock Advanced Analytics</h3>
+                <p style={{ color: 'var(--text-2)', fontSize: '0.92rem', maxWidth: 440, textAlign: 'center', lineHeight: 1.5, marginBottom: '1.5rem' }}>
+                  Get real-time insights, catalog distribution metrics, capacity charts, and low stock indicators.
+                </p>
+                <button onClick={() => navigate('/pricing')} className="apple-button primary" style={{ background: '#0071e3', color: '#fff', fontSize: '0.9rem', padding: '10px 24px' }}>
+                  Upgrade to Pro
+                </button>
+              </div>
+            </>
+          ) : (
+            <AnalyticsView inventory={inventory} />
+          )}
         </motion.div>
       </section>
 
@@ -872,8 +1036,11 @@ export default function Dashboard({ onLogout, user, theme, setTheme }) {
                       <button onClick={() => openTransactionModal(item, 'OUT')} className="apple-button danger" style={{ borderRadius: 12, padding: '9px 8px', fontSize: '0.78rem' }}>
                         <ArrowUpFromLine size={13} /> Dispatch
                       </button>
-                      <button onClick={() => openHistoryModal(item)} className="apple-button" style={{ gridColumn: '1/-1', borderRadius: 12, padding: '9px', fontSize: '0.78rem' }}>
-                        <History size={13} /> View Ledger
+                      <button onClick={() => openHistoryModal(item)} className="apple-button" style={{ borderRadius: 12, padding: '9px', fontSize: '0.78rem' }}>
+                        <History size={13} /> Ledger
+                      </button>
+                      <button onClick={() => openBarcodeModal(item)} className="apple-button" style={{ borderRadius: 12, padding: '9px', fontSize: '0.78rem', background: 'rgba(168,85,247,0.1)', color: '#bf5af2', border: '1px solid rgba(168,85,247,0.15)' }}>
+                        <Printer size={13} /> Barcode
                       </button>
                     </div>
 
@@ -1066,6 +1233,39 @@ export default function Dashboard({ onLogout, user, theme, setTheme }) {
                   ))}
                 </motion.div>
               )}
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* ── BARCODE GENERATOR & PRINT MODAL ── */}
+        {isBarcodeModalOpen && barcodeItem && (
+          <motion.div className="modal-overlay" variants={modalV} initial="hidden" animate="show" exit="exit"
+            onClick={e => e.target === e.currentTarget && setIsBarcodeModalOpen(false)}>
+            <motion.div className="modal-content" style={{ maxWidth: 440, padding: '2.5rem', textAlign: 'center' }} variants={panelV} initial="hidden" animate="show" exit="exit">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                <div style={{ textAlign: 'left' }}>
+                  <h2 style={{ fontSize: '1.4rem', fontWeight: 900, letterSpacing: '-0.04em', marginBottom: 3 }}>
+                    Barcode Generator
+                  </h2>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-2)' }}>{barcodeItem.model} · {barcodeItem.color}</p>
+                </div>
+                <button onClick={() => setIsBarcodeModalOpen(false)} style={{ background: 'var(--surface-3)', border: 'none', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div style={{ background: '#fff', color: '#000', borderRadius: 20, padding: '2.5rem 1.5rem', marginBottom: '2rem', display: 'flex', justifyContent: 'center', alignItems: 'center', boxShadow: 'inset 0 0 40px rgba(0,0,0,0.05)' }}>
+                <div className="barcode-svg-wrapper">
+                  <Barcode value={barcodeItem.id} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button type="button" onClick={() => setIsBarcodeModalOpen(false)} className="apple-button" style={{ flex: 1, padding: 14 }}>Close</button>
+                <button type="button" onClick={handlePrintBarcode} className="apple-button primary" style={{ flex: 1, padding: 14, background: '#bf5af2', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <Printer size={16} /> Print Barcode
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

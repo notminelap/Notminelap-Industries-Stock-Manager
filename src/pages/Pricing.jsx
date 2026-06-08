@@ -1,21 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Check, X, Package, Crown, ArrowRight, Sparkles, Copy, CheckCircle2 } from 'lucide-react';
+import { Check, X, Package, Crown, ArrowRight, Sparkles, Copy, CheckCircle2, CreditCard, Smartphone } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { apiPost, getStoredUser } from '../utils/api';
+import { apiGet, apiPost, getStoredUser } from '../utils/api';
 
 const sp = { type: 'spring', bounce: 0.3, duration: 0.5 };
 
 export default function Pricing() {
   const navigate = useNavigate();
   const [showPayment, setShowPayment] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('razorpay'); // 'razorpay' | 'upi'
   const [txnId, setTxnId] = useState('');
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [config, setConfig] = useState(null);
   const user = getStoredUser();
 
-  const UPI_ID = 'radheshranvijay@fam';
+  useEffect(() => {
+    apiGet('/payments/config').then(setConfig).catch(() => {});
+  }, []);
+
+  const UPI_ID = config?.upiId || 'radheshranvijay@fam';
   const UPI_LINK = `upi://pay?pa=${UPI_ID}&pn=Notminelap%20Industries&am=100&cu=INR&tn=Pro%20Plan%20Subscription`;
 
   const copyUPI = () => {
@@ -24,7 +30,50 @@ export default function Pricing() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleActivate = async () => {
+  // Razorpay Checkout
+  const handleRazorpay = async () => {
+    if (!user) { toast.error('Please log in first'); navigate('/login'); return; }
+    setLoading(true);
+    try {
+      const data = await apiPost('/payments/create-subscription', {});
+      
+      const options = {
+        key: data.razorpayKeyId,
+        subscription_id: data.subscriptionId,
+        name: 'Notminelap Industries',
+        description: 'Pro Plan — ₹100/month Autopay',
+        theme: { color: '#0071e3', backdrop_color: '#000' },
+        modal: { confirm_close: true, ondismiss: () => setLoading(false) },
+        handler: async (response) => {
+          try {
+            await apiPost('/payments/verify', {
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_subscription_id: response.razorpay_subscription_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            toast.success('🎉 Pro plan activated with autopay!');
+            navigate('/');
+          } catch (err) {
+            toast.error(err.message || 'Payment verification failed');
+          } finally { setLoading(false); }
+        },
+        prefill: { name: user.username },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', (response) => {
+        toast.error('Payment failed: ' + (response.error?.description || 'Unknown error'));
+        setLoading(false);
+      });
+      rzp.open();
+    } catch (err) {
+      toast.error(err.message || 'Could not initiate payment');
+      setLoading(false);
+    }
+  };
+
+  // Manual UPI fallback
+  const handleManualUPI = async () => {
     if (!txnId.trim()) { toast.error('Please enter your UPI Transaction ID'); return; }
     if (!user) { toast.error('Please log in first'); navigate('/login'); return; }
     setLoading(true);
@@ -78,7 +127,7 @@ export default function Pricing() {
             Choose your plan.
           </h1>
           <p style={{ color: '#a1a1a6', fontSize: '1.15rem', fontWeight: 500, maxWidth: 600, margin: '0 auto' }}>
-            Start free, upgrade when you're ready. No hidden fees.
+            Start free, upgrade when you're ready. Cancel anytime.
           </p>
         </motion.div>
 
@@ -121,16 +170,16 @@ export default function Pricing() {
             }}>
             <div style={{ position: 'absolute', top: 16, right: 16 }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 12px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 700, background: 'rgba(0,113,227,0.2)', color: '#3b9eff' }}>
-                <Sparkles size={10} /> POPULAR
+                <Sparkles size={10} /> RECOMMENDED
               </span>
             </div>
             <div style={{ marginBottom: '1.5rem' }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#3b9eff', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Pro</span>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#3b9eff', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Pro — Autopay</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, margin: '0.75rem 0' }}>
                 <span style={{ fontSize: '3.5rem', fontWeight: 900, letterSpacing: '-0.04em' }}>₹100</span>
                 <span style={{ color: '#6e6e73', fontWeight: 500 }}>/month</span>
               </div>
-              <p style={{ color: '#6e6e73', fontSize: '0.9rem' }}>For serious warehouse operations</p>
+              <p style={{ color: '#6e6e73', fontSize: '0.9rem' }}>Auto-renews monthly · Cancel anytime</p>
             </div>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, marginBottom: '2rem' }}>
               {pro.map(f => (
@@ -140,18 +189,38 @@ export default function Pricing() {
                 </div>
               ))}
             </div>
-            <button onClick={() => user ? setShowPayment(true) : navigate('/register')} style={{
+            <button onClick={() => {
+              if (!user) { navigate('/register'); return; }
+              if (config?.razorpayEnabled) { handleRazorpay(); }
+              else { setShowPayment(true); }
+            }} disabled={loading} style={{
               width: '100%', padding: '14px', borderRadius: 999, border: 'none',
               background: '#0071e3', color: '#fff', fontFamily: 'inherit', fontSize: '0.95rem',
-              fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s',
-              boxShadow: '0 0 30px rgba(0,113,227,0.25)',
+              fontWeight: 700, cursor: loading ? 'wait' : 'pointer', transition: 'all 0.2s',
+              boxShadow: '0 0 30px rgba(0,113,227,0.25)', opacity: loading ? 0.7 : 1,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8
-            }}>Upgrade to Pro <ArrowRight size={16} /></button>
+            }}>
+              {loading ? 'Processing...' : <><CreditCard size={16} /> Upgrade to Pro</>}
+            </button>
+            {config?.razorpayEnabled && (
+              <button onClick={() => { if (!user) { navigate('/register'); return; } setShowPayment(true); }}
+                style={{ width: '100%', padding: '10px', borderRadius: 999, border: 'none', background: 'none', color: '#6e6e73', fontFamily: 'inherit', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', marginTop: 8 }}>
+                Or pay manually via UPI
+              </button>
+            )}
           </motion.div>
         </div>
+
+        {/* Autopay Badge */}
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}
+          style={{ textAlign: 'center', marginTop: '2.5rem' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: '#6e6e73', fontWeight: 500 }}>
+            <Smartphone size={14} /> Powered by Razorpay · Secure payments · UPI, Cards, NetBanking accepted
+          </span>
+        </motion.div>
       </div>
 
-      {/* Payment Modal */}
+      {/* Manual UPI Payment Modal (fallback) */}
       <AnimatePresence>
         {showPayment && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -162,20 +231,18 @@ export default function Pricing() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1.5rem' }}>
                 <div>
                   <h2 style={{ fontWeight: 900, fontSize: '1.5rem', letterSpacing: '-0.03em' }}>Pay via UPI</h2>
-                  <p style={{ color: '#a1a1a6', fontSize: '0.85rem', marginTop: 4 }}>Complete payment to activate Pro</p>
+                  <p style={{ color: '#a1a1a6', fontSize: '0.85rem', marginTop: 4 }}>Manual payment — activate instantly</p>
                 </div>
                 <button onClick={() => setShowPayment(false)} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: '50%', width: 32, height: 32, cursor: 'pointer', color: '#a1a1a6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <X size={16} />
                 </button>
               </div>
 
-              {/* Amount */}
               <div style={{ background: 'rgba(0,113,227,0.08)', borderRadius: 20, padding: '1.5rem', textAlign: 'center', marginBottom: '1.5rem', border: '1px solid rgba(0,113,227,0.15)' }}>
                 <p style={{ fontSize: '3rem', fontWeight: 900, letterSpacing: '-0.04em' }}>₹100</p>
                 <p style={{ color: '#a1a1a6', fontSize: '0.85rem' }}>Pro Plan · 1 Month</p>
               </div>
 
-              {/* UPI Steps */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: '1.5rem' }}>
                 <div style={{ background: '#2c2c2e', borderRadius: 16, padding: '1rem' }}>
                   <p style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Step 1: Pay to this UPI ID</p>
@@ -191,20 +258,16 @@ export default function Pricing() {
                 </a>
               </div>
 
-              {/* Step 2: Enter Transaction ID */}
               <div style={{ marginBottom: '1.5rem' }}>
                 <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6e6e73', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 8 }}>Step 2: Enter UPI Transaction ID</label>
-                <input
-                  value={txnId} onChange={e => setTxnId(e.target.value)}
-                  placeholder="e.g. 412345678901"
-                  style={{ width: '100%', padding: '14px 18px', borderRadius: 16, background: '#2c2c2e', border: '1.5px solid transparent', color: '#f5f5f7', outline: 'none', fontSize: '1rem', fontFamily: 'inherit', letterSpacing: '-0.01em' }}
-                />
+                <input value={txnId} onChange={e => setTxnId(e.target.value)} placeholder="e.g. 412345678901"
+                  style={{ width: '100%', padding: '14px 18px', borderRadius: 16, background: '#2c2c2e', border: '1.5px solid transparent', color: '#f5f5f7', outline: 'none', fontSize: '1rem', fontFamily: 'inherit' }} />
               </div>
 
-              <button onClick={handleActivate} disabled={loading} style={{
+              <button onClick={handleManualUPI} disabled={loading} style={{
                 width: '100%', padding: '14px', borderRadius: 999, border: 'none',
                 background: '#0071e3', color: '#fff', fontFamily: 'inherit', fontSize: '1rem',
-                fontWeight: 700, cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1, transition: 'all 0.2s'
+                fontWeight: 700, cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1
               }}>{loading ? 'Activating...' : 'Activate Pro Plan'}</button>
             </motion.div>
           </motion.div>

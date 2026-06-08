@@ -37,8 +37,29 @@ app.use(express.json({ limit: '10mb' }));
 // ── MongoDB Connection ─────────────────────────────────────────────────
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/perfect-ergonomics';
 
+async function autoSeedAdmin() {
+  try {
+    const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'notminelap';
+    const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '9334246278@';
+    const existing = await User.findOne({ username: ADMIN_USERNAME.toLowerCase() });
+    if (!existing) {
+      const bcrypt = await import('bcrypt');
+      const hash = await bcrypt.default.hash(ADMIN_PASSWORD, 12);
+      await User.create({ username: ADMIN_USERNAME.toLowerCase(), passwordHash: hash, role: 'admin' });
+      console.log(`✅ Admin user '${ADMIN_USERNAME}' auto-seeded successfully!`);
+    } else {
+      console.log(`ℹ️ Admin user '${ADMIN_USERNAME}' already exists.`);
+    }
+  } catch (err) {
+    console.error('❌ Auto-seed error:', err.message);
+  }
+}
+
 mongoose.connect(MONGODB_URI)
-  .then(() => console.log('✅ Connected to MongoDB'))
+  .then(() => {
+    console.log('✅ Connected to MongoDB');
+    autoSeedAdmin();
+  })
   .catch(err => { console.error('❌ MongoDB connection error:', err); process.exit(1); });
 
 // ── Schemas ────────────────────────────────────────────────────────────
@@ -97,6 +118,20 @@ app.get('/api/inventory/alerts', authMiddleware, attachSubscription, async (req,
 
 app.post('/api/inventory', authMiddleware, attachSubscription, validate(itemValidator), async (req, res) => {
   try {
+    // Check catalog size for new items if not Pro
+    if (req.subscription?.plan !== 'pro') {
+      const existingItem = await Item.findOne({ id: req.body.id }).lean();
+      if (!existingItem) {
+        const count = await Item.countDocuments({});
+        if (count >= 50) {
+          return res.status(403).json({
+            error: 'Free tier catalog limit reached (50 items). Upgrade to Pro for unlimited items.',
+            upgrade: true
+          });
+        }
+      }
+    }
+
     const item = await Item.findOneAndUpdate(
       { id: req.body.id },
       req.body,
@@ -236,7 +271,7 @@ app.delete('/api/users/:userId', authMiddleware, requireRole('admin'), async (re
 // ── Serve built frontend (production) ─────────────────────────────────
 const distPath = join(__dirname, 'dist');
 app.use(express.static(distPath));
-app.get('/{*path}', (req, res) => res.sendFile(join(distPath, 'index.html')));
+app.get('*', (req, res) => res.sendFile(join(distPath, 'index.html')));
 
 // ── Global Error Handler ───────────────────────────────────────────────
 app.use((err, req, res, _next) => {
