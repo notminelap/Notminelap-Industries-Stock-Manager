@@ -15,7 +15,7 @@
 - Mobile-responsive design
 
 ### Pro Tier (₹100/month)
-- Advanced analytics with Chart.js visualizations
+- Advanced analytics with interactive visualizations
 - Barcode generation & label printing
 - CSV import/export
 - Low-stock alert system
@@ -26,26 +26,34 @@
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | React 19, Vite 8, Tailwind CSS 4, Framer Motion |
+| Frontend | React 19, Vite 8, Framer Motion, Lucide Icons |
 | Backend | Node.js, Express 5, JWT Authentication |
 | Database | MongoDB Atlas + Mongoose 8 |
-| Payments | UPI Direct Pay |
-| Hosting | Render (24/7) |
+| Payments | Razorpay Subscriptions + UPI Direct Pay |
+| Validation | Zod 4 |
+| Hosting | Render (24/7 cloud deployment) |
 
-## 🚀 Live Demo
-
-[https://perfect-ergonomics.onrender.com](https://perfect-ergonomics.onrender.com)
-
-## 📦 Quick Start
+## 🚀 Quick Start
 
 ```bash
 git clone https://github.com/notminelap/perfect-ergonomics.git
 cd perfect-ergonomics
 npm install
 cp .env.example .env  # Fill in your MongoDB URI and JWT secret
-node seed.js           # Create admin user
-npm run dev            # Start development server
+npm run dev            # Admin auto-seeds on startup
 ```
+
+## 🔐 Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `MONGODB_URI` | ✅ | MongoDB Atlas connection string |
+| `JWT_SECRET` | ✅ | Secret key for JWT tokens |
+| `ADMIN_USERNAME` | No | Default admin username (default: notminelap) |
+| `ADMIN_PASSWORD` | No | Default admin password |
+| `RAZORPAY_KEY_ID` | No | Razorpay API key (enables autopay) |
+| `RAZORPAY_KEY_SECRET` | No | Razorpay secret key |
+| `PORT` | No | Server port (default: 3002) |
 
 ---
 

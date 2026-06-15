@@ -1,9 +1,10 @@
-# 🚀 Deploying Perfect Ergonomics — 24/7 Guide
+# 🚀 Deploying Notminelap Industries — 24/7 Guide
 
 ## Architecture
 One single Render service runs the Express server, which:
 - Hosts the Node.js API at `/api/...`
 - Serves the built React frontend from `/dist/`
+- Auto-seeds the admin account on startup
 
 Data is stored in **MongoDB Atlas** (free, persistent forever).
 
@@ -20,51 +21,15 @@ Data is stored in **MongoDB Atlas** (free, persistent forever).
    ```
    mongodb+srv://myuser:mypassword@cluster0.abc12.mongodb.net/?retryWrites=true&w=majority
    ```
-7. Change `/?` to `/perfect-ergonomics?` to specify the database name:
+7. Change `/?` to `/notminelap-industries?` to specify the database name:
    ```
-   mongodb+srv://myuser:mypassword@cluster0.abc12.mongodb.net/perfect-ergonomics?retryWrites=true&w=majority
+   mongodb+srv://myuser:mypassword@cluster0.abc12.mongodb.net/notminelap-industries?retryWrites=true&w=majority
    ```
-   ✅ Keep this string ready — you'll need it in Step 3.
+   ✅ Keep this string ready.
 
 ---
 
-## Step 2 — Migrate Your Existing Data
-
-Run this once on your local machine to import all your current inventory into MongoDB:
-
-```powershell
-# In PowerShell, in the perfect-ergonomics folder:
-$env:MONGODB_URI = "mongodb+srv://myuser:mypassword@cluster0.abc12.mongodb.net/perfect-ergonomics?retryWrites=true&w=majority"
-node migrate.js
-```
-
-You should see: `🎉 Migration complete!`
-
----
-
-## Step 3 — Push Code to GitHub
-
-If you haven't already:
-
-```powershell
-cd "C:\Users\Radhesh Ranvijay\.gemini\antigravity\scratch\perfect-ergonomics"
-
-git init
-git add .
-git commit -m "chore: prepare for Render deployment"
-```
-
-Then create a new repo on **https://github.com/new** and push:
-
-```powershell
-git remote add origin https://github.com/YOUR_USERNAME/perfect-ergonomics.git
-git branch -M main
-git push -u origin main
-```
-
----
-
-## Step 4 — Deploy to Render
+## Step 2 — Deploy to Render
 
 1. Go to → **https://render.com** and sign up (free)
 2. Click **New** → **Web Service**
@@ -74,29 +39,19 @@ git push -u origin main
    | Key | Value |
    |-----|-------|
    | `MONGODB_URI` | *(paste your Atlas connection string)* |
-6. Click **Deploy** — Render will run `npm install && npm run build`, then start the server
-
-Your app will be live at:
-```
-https://perfect-ergonomics.onrender.com
-```
+   | `JWT_SECRET` | *(any random string)* |
+   | `ADMIN_USERNAME` | `notminelap` |
+   | `ADMIN_PASSWORD` | `9334246278@` |
+6. Click **Deploy** — the server auto-seeds the admin account on startup
 
 ---
 
-## Step 5 — Access from Any Device
-
-Open `https://perfect-ergonomics.onrender.com` on **any phone, tablet, or computer** — bookmarks it for quick access.
-
-> **Note on Free Tier:** Render's free tier spins the service down after 15 minutes of inactivity. It wakes back up in ~30 seconds when you next visit. For always-on operation, upgrade to Render's **Starter** plan ($7/month).
-
----
-
-## Local Development (unchanged)
+## Local Development
 
 ```powershell
 npm run dev
 ```
-This still works exactly as before — it runs both the Vite dev server and the Node.js server concurrently using your local MongoDB (or set MONGODB_URI in a `.env` file).
+Runs both the Vite dev server and the Node.js server concurrently.
 
 ---
 
@@ -105,4 +60,9 @@ This still works exactly as before — it runs both the Vite dev server and the 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `MONGODB_URI` | ✅ Yes | MongoDB Atlas connection string |
+| `JWT_SECRET` | ✅ Yes | Secret for JWT token signing |
+| `ADMIN_USERNAME` | No | Admin username (default: notminelap) |
+| `ADMIN_PASSWORD` | No | Admin password |
+| `RAZORPAY_KEY_ID` | No | Razorpay API key ID |
+| `RAZORPAY_KEY_SECRET` | No | Razorpay API secret |
 | `PORT` | No | Server port (Render sets this automatically) |

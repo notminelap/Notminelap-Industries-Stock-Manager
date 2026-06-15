@@ -4,7 +4,7 @@ import dns from 'dns';
 
 dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/perfect-ergonomics';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/notminelap-industries';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'notminelap';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '9334246278@';
 

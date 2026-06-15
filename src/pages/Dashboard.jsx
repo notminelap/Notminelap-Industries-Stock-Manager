@@ -10,7 +10,7 @@ import {
   Edit2, Trash2, History, ArrowDownToLine, ArrowUpFromLine,
   X, Box, BarChart3, AlertTriangle, CheckCircle2,
   Layers, Package, Activity, Download, Clock, SlidersHorizontal,
-  ArrowDown, ArrowUp, Sun, Moon, Printer
+  ArrowDown, ArrowUp, Sun, Moon, Printer, Shield
 } from 'lucide-react';
 
 /* ─────────── helpers ─────────── */
@@ -706,6 +706,22 @@ export default function Dashboard({ onLogout, user, theme, setTheme }) {
               {n.label}
             </button>
           ))}
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => navigate('/admin')}
+              style={{
+                background: 'rgba(168,85,247,0.12)',
+                border: '1px solid rgba(168,85,247,0.2)',
+                cursor: 'pointer',
+                color: '#bf5af2',
+                padding: '4px 12px', borderRadius: 8, fontFamily: 'inherit',
+                fontSize: '0.82rem', fontWeight: 600, transition: 'all .2s',
+                display: 'flex', alignItems: 'center', gap: 4
+              }}
+            >
+              <Shield size={12} /> Admin
+            </button>
+          )}
         </div>
 
         {/* right side: clock + shortcuts + theme + logout */}

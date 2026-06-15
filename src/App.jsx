@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Admin from './pages/Admin';
 import Landing from './pages/Landing';
 import Pricing from './pages/Pricing';
 import Register from './pages/Register';
@@ -49,6 +50,7 @@ function AppRoutes({ isAuthenticated, handleLogin, handleLogout, theme, setTheme
         <Route path="/login" element={!isAuthenticated ? <Login onLogin={handleLogin} /> : <Navigate to="/" />} />
         <Route path="/register" element={!isAuthenticated ? <Register onLogin={handleLogin} /> : <Navigate to="/" />} />
         <Route path="/pricing" element={<Pricing />} />
+        <Route path="/admin" element={isAuthenticated && currentUser?.role === 'admin' ? <Admin user={currentUser} /> : <Navigate to="/" />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </AnimatePresence>

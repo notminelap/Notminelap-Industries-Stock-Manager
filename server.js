@@ -35,7 +35,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 
 // ── MongoDB Connection ─────────────────────────────────────────────────
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/perfect-ergonomics';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/notminelap-industries';
 
 async function autoSeedAdmin() {
   try {
@@ -99,7 +99,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/payments', paymentRouter);
 
 // ── REST Endpoints ─────────────────────────────────────────────────────
-app.get('/api/inventory', authMiddleware, attachSubscription, async (req, res) => {
+app.get('/api/inventory', authMiddleware, async (req, res) => {
   try {
     const items = await Item.find({}).lean();
     res.json(items);
@@ -107,7 +107,7 @@ app.get('/api/inventory', authMiddleware, attachSubscription, async (req, res) =
 });
 
 // Low-stock alerts — MUST be before /:id routes
-app.get('/api/inventory/alerts', authMiddleware, attachSubscription, async (req, res) => {
+app.get('/api/inventory/alerts', authMiddleware, async (req, res) => {
   try {
     const items = await Item.find({
       $expr: { $lte: ['$quantity', '$lowStockThreshold'] }
@@ -116,22 +116,8 @@ app.get('/api/inventory/alerts', authMiddleware, attachSubscription, async (req,
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/inventory', authMiddleware, attachSubscription, validate(itemValidator), async (req, res) => {
+app.post('/api/inventory', authMiddleware, validate(itemValidator), async (req, res) => {
   try {
-    // Check catalog size for new items if not Pro
-    if (req.subscription?.plan !== 'pro') {
-      const existingItem = await Item.findOne({ id: req.body.id }).lean();
-      if (!existingItem) {
-        const count = await Item.countDocuments({});
-        if (count >= 50) {
-          return res.status(403).json({
-            error: 'Free tier catalog limit reached (50 items). Upgrade to Pro for unlimited items.',
-            upgrade: true
-          });
-        }
-      }
-    }
-
     const item = await Item.findOneAndUpdate(
       { id: req.body.id },
       req.body,
@@ -141,7 +127,7 @@ app.post('/api/inventory', authMiddleware, attachSubscription, validate(itemVali
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/inventory/:id', authMiddleware, attachSubscription, validate(itemValidator.partial()), async (req, res) => {
+app.put('/api/inventory/:id', authMiddleware, validate(itemValidator.partial()), async (req, res) => {
   try {
     const item = await Item.findOneAndUpdate(
       { id: req.params.id },
@@ -153,7 +139,7 @@ app.put('/api/inventory/:id', authMiddleware, attachSubscription, validate(itemV
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/inventory/:id', authMiddleware, attachSubscription, async (req, res) => {
+app.delete('/api/inventory/:id', authMiddleware, async (req, res) => {
   try {
     await Item.deleteOne({ id: req.params.id });
     await Transaction.deleteMany({ itemId: req.params.id });
@@ -162,7 +148,7 @@ app.delete('/api/inventory/:id', authMiddleware, attachSubscription, async (req,
 });
 
 // ── Transaction Endpoints ──────────────────────────────────────────────
-app.get('/api/inventory/:id/transactions', authMiddleware, attachSubscription, async (req, res) => {
+app.get('/api/inventory/:id/transactions', authMiddleware, async (req, res) => {
   try {
     const txs = await Transaction.find({ itemId: req.params.id })
       .sort({ createdAt: -1 })
@@ -171,7 +157,7 @@ app.get('/api/inventory/:id/transactions', authMiddleware, attachSubscription, a
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/inventory/:id/transaction', authMiddleware, attachSubscription, validate(txValidator), async (req, res) => {
+app.post('/api/inventory/:id/transaction', authMiddleware, validate(txValidator), async (req, res) => {
   try {
     const { type, quantity, partyName, date, address, billingNumber } = req.body;
     const numQty = Number(quantity);
@@ -210,7 +196,7 @@ app.post('/api/inventory/:id/transaction', authMiddleware, attachSubscription, v
 });
 
 /* ── All transactions (activity feed) ── */
-app.get('/api/transactions', authMiddleware, attachSubscription, async (req, res) => {
+app.get('/api/transactions', authMiddleware, async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
@@ -265,6 +251,38 @@ app.delete('/api/users/:userId', authMiddleware, requireRole('admin'), async (re
     }
     await User.findByIdAndDelete(req.params.userId);
     res.status(204).send();
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Admin Dashboard Stats (Admin only) ──────────────────────────────────
+app.get('/api/admin/stats', authMiddleware, requireRole('admin'), async (req, res) => {
+  try {
+    const [totalItems, totalUsers, totalTransactions, recentUsers, subscriptions] = await Promise.all([
+      Item.countDocuments({}),
+      User.countDocuments({}),
+      Transaction.countDocuments({}),
+      User.find({}).select('-passwordHash').sort({ createdAt: -1 }).limit(20).lean(),
+      // Import Subscription from payments.js is already available via attachSubscription
+      mongoose.connection.db.collection('subscriptions').find({}).toArray().catch(() => []),
+    ]);
+
+    const lowStockItems = await Item.find({
+      $expr: { $lte: ['$quantity', '$lowStockThreshold'] }
+    }).lean();
+
+    res.json({
+      totalItems,
+      totalUsers,
+      totalTransactions,
+      lowStockCount: lowStockItems.length,
+      recentUsers: recentUsers.map(u => ({
+        id: u._id.toString(),
+        username: u.username,
+        role: u.role,
+        createdAt: u.createdAt,
+      })),
+      proUsers: subscriptions.filter(s => s.plan === 'pro' && s.status === 'active').length,
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

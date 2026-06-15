@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: perfect-ergonomics
+    name: notminelap-industries
     env: node
     region: singapore   # closest to India
     plan: free
